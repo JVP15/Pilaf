@@ -1,17 +1,26 @@
 import sys
 import random
+import time
+
 import numpy as np
 from Backgammon import Backgammon
-
-"""Yeah... this is some horrible code that I cobbled together. It is ugly and fragile. 
-Future Jordan or future collaborators, good luck."""
+import GNUBGClient
 
 dataset = list()
 
 
+def create_bearoff_board(board):
+    bearoff_board = np.empty((28,), dtype=np.int32)
+    bearoff_board[1:27] = board
+    bearoff_board[0] = sum(board > 0)
+    bearoff_board[27] = sum(board < 0)
+
+    return bearoff_board
+
+
 def create_dataset():
-    for i in range(1, 11):
-        filename = f'games\\games{i}.txt'
+    for i in range(0, 12):
+        filename = f'games\\game{i}'
         print('Opening', filename)
 
         with open(filename, 'r') as match_file:
@@ -77,11 +86,12 @@ def parse_game(in_file):
     # If P1 wins, we give it a score of 1
     winner = 1
     # when P1 wins, there are 6 spaces before the number of points, but there are 34 spaces when P2 wins
-    # so if there are 7 spaces at the start of the line, we know that P2 won, and we say that the value is -1
+    # so if there are 7 spaces at the start of the line, we know that P2 won, and we say that the value is 0
     if line.startswith('       '):
         winner = 0
 
     for board in boards:
+        #dataset.append((create_bearoff_board(board), winner))  # uncomment to test including the bearoff checkers
         dataset.append((board, winner))
 
     # since we've gone through the entire game, we haven't reached the end of the file
@@ -129,10 +139,11 @@ def apply_move(backgammon, player, move_str):
 
     for move in list_of_moves:
         backgammon.move_checker(int(move[0]), int(move[1]), player)
-        #print(f'P{player} moving from {move[0]} to {move[1]}')
+        #print(f'P{player} moving from {move[0]} to {move[1]}'
 
 def main():
     create_dataset()
+
     return 0
 
 

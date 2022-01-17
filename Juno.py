@@ -10,11 +10,13 @@ from GNUBGClient import GNUBGClient
 
 def create_model():
     model = tf.keras.Sequential([
+        #tf.keras.layers.InputLayer(input_shape=(28,), dtype='int32'), # uncomment to test including the bearoff checkers
         tf.keras.layers.InputLayer(input_shape=(26,), dtype='int32'),
         tf.keras.layers.Dense(128, activation='relu'),
         tf.keras.layers.Dense(128, activation='relu'),
         tf.keras.layers.Dense(128, activation='relu'),
         tf.keras.layers.Dense(2, activation='relu'),
+        tf.keras.layers.Softmax()
     ])
 
     model.compile(optimizer='adam',
@@ -44,7 +46,10 @@ def play_backgammon(policy):
     game = Backgammon()
     player = 1
     match_point = 10
+
     gnubg.new_match(match_point)
+    print(f'Playing {match_point} point match')
+
     num_games = 0
     old_p1_score = 0
     old_p2_score = 0
@@ -59,7 +64,6 @@ def play_backgammon(policy):
 
             best_board, best_move = policy.predict(boards, moves)
 
-            #print(f'Best Score = {best_score}')
             #print('Current board =', game.board)
             #print('Predict board =', best_board)
 
@@ -73,29 +77,39 @@ def play_backgammon(policy):
             old_p1_score = gnubg.p1_score
             old_p2_score = gnubg.p2_score
 
+    winner = 1 if gnubg.p1_score > gnubg.p2_score else 2
+
+    print(f'Player {winner} won the match')
+
     gnubg.close()
 
 # use to load model
-# model = tf.keras.models.load_model('pilaf_model')
+# model = tf.keras.models.load_model('juno_model')
 # use to save model
-# model.save('pilaf_model')
+# model.save('juno_model')
 
 
 class NNPolicy(object):
-    model = tf.keras.models.load_model('pilaf_model')
+    def __init__(self):
+        self.model = tf.keras.models.load_model('juno_model')
 
     def predict(self, boards, moves):
+        bearoff_boards = [Preprocessor.create_bearoff_board(board) for board in boards]
+
+        #scores = self.model.predict(np.asarray(bearoff_boards)) # uncomment to test including the bearoff checkers
         scores = self.model.predict(np.asarray(boards))
         best_board = None
         best_move = None
         best_score = -1
 
+        #for board, move, score in zip(bearoff_boards, moves, scores): # uncomment to test including the bearoff checkers
         for board, move, score in zip(boards, moves, scores):
-            if score[0] > best_score:  # TODO: make it work with both players
+            if score[1] > best_score:  # TODO: make it work with both players
                 best_board = board
                 best_move = move
-                best_score = score[0]  # TODO: make it work with both players
+                best_score = score[1]  # TODO: make it work with both players
 
+        #print(f'Best Score = {best_score}')
         return best_board, best_move
 
 
@@ -106,8 +120,11 @@ class RandomPolicy(object):
         return boards[index], moves[index]
 
 def main():
-    #play_backgammon(NNPolicy())
-    play_backgammon(RandomPolicy())
+    model = train_model()
+    model.save('juno_model')
+
+    play_backgammon(NNPolicy())
+    #play_backgammon(RandomPolicy())
 
     return 0
 
