@@ -10,7 +10,7 @@ import win32gui
 
 from Backgammon import Backgammon
 
-SLEEP_DURATION = 0.12
+SLEEP_DURATION = 0.04
 GNUBG_WINDOW_NAME = 'gnubg'
 GNUBG_OUTPUT_FILE = 'gnubg_out.txt'
 GNUBG_EXE_LOCATION = r'C:\Program Files (x86)\gnubg\gnubg-cli.exe'
@@ -18,7 +18,8 @@ GNUBG_EXE_LOCATION = r'C:\Program Files (x86)\gnubg\gnubg-cli.exe'
 
 class GNUBGClient(object):
     def __init__(self):
-        self.window = None
+        self.console_shell = None
+        self.console_window = None
         self.offset = 0
 
         self.p1_score = 0
@@ -31,13 +32,18 @@ class GNUBGClient(object):
         self.kill_console()  # I've found far too often that there is some error and the console window is still open after I ran the program
         print('GNUBG Client Connecting...')
 
-        os.system(f'START /MIN run_gnubg.bat {GNUBG_WINDOW_NAME} {GNUBG_OUTPUT_FILE}')
+        os.system(f'START run_gnubg.bat {GNUBG_WINDOW_NAME} {GNUBG_OUTPUT_FILE}')
         time.sleep(SLEEP_DURATION * 10) # need to give the shell a bit of time to load
 
         # HUGE thanks to user tzot for this Stack Overflow answer:
         # https://stackoverflow.com/a/136780
         # which has FINALLY allowed me to communicate with gnubg
-        self.window = comclient.Dispatch("WScript.Shell")
+        self.console_shell = comclient.Dispatch("WScript.Shell")
+        self.console_window = win32gui.FindWindow(None, GNUBG_WINDOW_NAME)
+
+        # since we need to send keystrokes to the console window,
+        # we can't minimize it, but we can move it off the screen
+        win32gui.MoveWindow(self.console_window, 100, -600, 900, 300, True)
 
         # consume the lines that were printed by opening up GNU Backgammon
         self.readlines()
@@ -78,14 +84,18 @@ class GNUBGClient(object):
 
     def update_score(self, lines):
         """This function checks the input lines for any changes in the score of the current match"""
-        # This is kinda fragile and I'm not entirely sure if it works in all cases
-        # The numbers were gathers by printing the lines that were consumed before executing 'show board'
-        if len(lines) > 0 and lines[1].startswith('P'):
+        # If a player wins a game, it will be printed on the line after a move command (move command is line 0, win is line 1)
+        # The line looks like 'P# wins... and 2 points\n' or 'P# wins ... and 1 point\n'
+        # where the player number is the second character (index 1) and the number of points they won is either
+        # index -10 or index -9. It is tricky to figure out how many characters are in the ...
+
+        if len(lines) > 1 and lines[1].startswith('P'):
             player = int(lines[1][1])
             if player == 1:
-                self.p1_score += int(lines[1][-10])
+                # remember, we want the values in index -10 and -9, and -10:-8 is the syntax to get it
+                self.p1_score += int(lines[1][-10:-8])
             else:
-                self.p2_score += int(lines[1][-10])
+                self.p2_score += int(lines[1][-10:-8])
 
     def new_match(self, num_games):
         self.p1_score = 0
@@ -108,19 +118,39 @@ class GNUBGClient(object):
         #self.readlines()
 
     def execute(self, command):
-        self.window.AppActivate(GNUBG_WINDOW_NAME) # may be redundant, may not be. I don't know.
-        self.window.SendKeys(command + '{ENTER}')
+        # AppActivate has been horribly fickle, so I've had to change it to SetForegroundWindow
+        #self.window.AppActivate(GNUBG_WINDOW_NAME, True)
+
+        win32gui.SetForegroundWindow(self.console_window)
+        self.console_shell.SendKeys(command + '{ENTER}')
 
     def readlines(self, sleep_duration=SLEEP_DURATION):
         # we want to wait a bit so that GNU Backgammon can write to the file
-        time.sleep(sleep_duration)
-        # while os.path.getsize(GNUBG_OUTPUT_FILE) <= self.offset:
-        #    time.sleep(sleep_duration)
+        # TODO: this function is stable, but it is also slow. Try to find ways to speed it up.
+        MAX_TRIES = 4
+        num_tries = 0
+        lines = []
+        while num_tries < MAX_TRIES:
+            time.sleep(sleep_duration)
 
-        with open(GNUBG_OUTPUT_FILE, 'r') as input_file:
-            input_file.seek(self.offset)
-            lines = input_file.readlines()
-            self.offset = input_file.tell()
+            if os.path.getsize(GNUBG_OUTPUT_FILE) > self.offset:
+                with open(GNUBG_OUTPUT_FILE, 'r') as input_file:
+                    input_file.seek(self.offset)
+                    lines.extend(input_file.readlines())
+                    self.offset = input_file.tell()
+
+                num_tries = 0
+            else:
+                num_tries += 1
+
+        # time.sleep(sleep_duration)
+        # # while os.path.getsize(GNUBG_OUTPUT_FILE) <= self.offset:
+        # #    time.sleep(sleep_duration)
+        #
+        # with open(GNUBG_OUTPUT_FILE, 'r') as input_file:
+        #     input_file.seek(self.offset)
+        #     lines = input_file.readlines()
+        #     self.offset = input_file.tell()
 
         return lines
 
@@ -135,11 +165,12 @@ class GNUBGClient(object):
         print('GNUBG Client Closed.')
 
     def kill_console(self):
-        console_window = win32gui.FindWindow(None, 'gnubg')
+        console_window = win32gui.FindWindow(None, GNUBG_WINDOW_NAME)
 
         if console_window != 0:
             # 0x0010 is the WM_CLOSE message
             win32api.SendMessage(console_window, 0x0010, 0, 0)
+
 
 # The syntax for getting a single character in a list of strings is kinda messy, so I'll just use this instead
 def _get_char_at(lines, row_col_tuple):
