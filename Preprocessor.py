@@ -8,7 +8,6 @@ import GNUBGClient
 
 dataset = list()
 
-
 def create_bearoff_board(board):
     bearoff_board = np.empty((28,), dtype=np.int32)
     bearoff_board[1:27] = board
@@ -17,6 +16,16 @@ def create_bearoff_board(board):
 
     return bearoff_board
 
+def board_to_planes(board):
+    planes = np.zeros((28, 6, 2), dtype=np.float32) # two planes in total (1 for each player)
+
+    for i in range(len(board)):
+        if board[i] > 0:
+            planes[i, 0:min(6, board[i]), 0] = 1
+        elif board[i] < 0:
+            planes[i, 0:min(6, -1 * board[i]), 1] = 1
+
+    return planes
 
 def create_dataset():
     for i in range(0, 12):
@@ -91,8 +100,7 @@ def parse_game(in_file):
         winner = 0
 
     for board in boards:
-        #dataset.append((create_bearoff_board(board), winner))  # uncomment to test including the bearoff checkers
-        dataset.append((board, winner))
+        dataset.append((board_to_planes(create_bearoff_board(board)), winner))
 
     # since we've gone through the entire game, we haven't reached the end of the file
     return False

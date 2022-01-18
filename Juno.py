@@ -10,11 +10,16 @@ from GNUBGClient import GNUBGClient
 
 def create_model():
     model = tf.keras.Sequential([
-        #tf.keras.layers.InputLayer(input_shape=(28,), dtype='int32'), # uncomment to test including the bearoff checkers
-        tf.keras.layers.InputLayer(input_shape=(26,), dtype='int32'),
+        #tf.keras.layers.InputLayer(input_shape=(28, ), dtype='int32'),
+        #tf.keras.layers.Conv2D(32, 1, (3,3), activation='relu'),
+        #tf.keras.layers.Conv2D(32, 1, (3, 3), activation='relu'),
+        tf.keras.layers.Flatten(input_shape=(28, 6, 2)),
+        tf.keras.layers.Dense(256, activation='relu'),
         tf.keras.layers.Dense(128, activation='relu'),
         tf.keras.layers.Dense(128, activation='relu'),
         tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(.2),
         tf.keras.layers.Dense(2, activation='relu'),
         tf.keras.layers.Softmax()
     ])
@@ -32,9 +37,9 @@ def train_model():
     train_x, train_y, test_x, test_y = Preprocessor.create_train_test()
 
     model = create_model()
-    model.fit(train_x, train_y, epochs=10)
+    model.fit(train_x, train_y, epochs=6)
 
-    test_loss, test_acc = model.evaluate(train_x, train_y, verbose=2)
+    test_loss, test_acc = model.evaluate(test_x, test_y, verbose=2)
     print('accuracy = ', test_acc)
 
     return model
@@ -91,19 +96,19 @@ def play_backgammon(policy):
 
 class NNPolicy(object):
     def __init__(self):
-        self.model = tf.keras.models.load_model('juno_model')
+        self.model = tf.keras.models.load_model('juno_cnn_model')
 
     def predict(self, boards, moves):
         bearoff_boards = [Preprocessor.create_bearoff_board(board) for board in boards]
 
-        #scores = self.model.predict(np.asarray(bearoff_boards)) # uncomment to test including the bearoff checkers
-        scores = self.model.predict(np.asarray(boards))
+        scores = self.model.predict(np.asarray(bearoff_boards)) # uncomment to test including the bearoff checkers
+        #scores = self.model.predict(np.asarray(boards))
         best_board = None
         best_move = None
         best_score = -1
 
-        #for board, move, score in zip(bearoff_boards, moves, scores): # uncomment to test including the bearoff checkers
-        for board, move, score in zip(boards, moves, scores):
+        for board, move, score in zip(bearoff_boards, moves, scores): # uncomment to test including the bearoff checkers
+        #for board, move, score in zip(boards, moves, scores):
             if score[1] > best_score:  # TODO: make it work with both players
                 best_board = board
                 best_move = move
@@ -121,9 +126,9 @@ class RandomPolicy(object):
 
 def main():
     model = train_model()
-    model.save('juno_model')
+    #model.save('juno_cnn_model')
 
-    play_backgammon(NNPolicy())
+    #play_backgammon(NNPolicy())
     #play_backgammon(RandomPolicy())
 
     return 0
