@@ -383,14 +383,18 @@ class Backgammon(object):
         return legal_move
 
 def main():
-    game = Backgammon()
-    src_board = game.board
-    game.move_checker(23, 22, player=2)
-    game.move_checker(24, 22, player=2)
-    boards, moves = game.get_available_positions(4, 2, player=2)
 
-    print(boards)
-    print(moves)
+    game = Backgammon()
+    boards, moves = game.get_available_positions(4, 2, player=1)
+    # TODO: there seems to be a bug when checking moves for player 2
+    game.move_checker(8, 4, player=1)
+    src_board = game.board
+    game.move_checker(6, 4, player=1)
+    dest_board = game.board
+
+    print(np.concatenate([src_board, dest_board], 0).shape)
+    #print(boards)
+    #print(moves)
     return 0
 
 

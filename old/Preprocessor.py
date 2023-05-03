@@ -7,6 +7,7 @@ from Backgammon import Backgammon
 import GNUBGClient
 
 dataset = list()
+games = list()
 
 def create_bearoff_board(board):
     bearoff_board = np.empty((28,), dtype=np.int32)
@@ -69,6 +70,7 @@ def parse_game(in_file):
 
     game_board = Backgammon()
     boards = list()
+    rolls = list()
 
     # skip player scores
     in_file.readline()
@@ -77,15 +79,17 @@ def parse_game(in_file):
 
     # If there are 4 spaces, then it means that the line contains the winner of the game
     while not line.startswith('    '):
-        move_str_1, move_str_2 = parse_line(line)
+        move_str_1, move_str_2, p1_roll, p2_roll = parse_line(line)
 
-        if move_str_1 != '':
+        if move_str_1 is not None:
             apply_move(game_board, player=1, move_str=move_str_1)
             boards.append(game_board.board)
+            rolls.append(p1_roll)
 
-        if move_str_2 != '':
+        if move_str_2 is not None:
             apply_move(game_board, player=2, move_str=move_str_2)
             boards.append(game_board.board)
+            rolls.append(p2_roll)
 
         line = in_file.readline()
 
@@ -99,8 +103,10 @@ def parse_game(in_file):
     if line.startswith('       '):
         winner = 0
 
-    for board in boards:
-        dataset.append((board_to_planes(create_bearoff_board(board)), winner))
+    game = {'winner': winner,
+            'boards': boards,
+            'rolls': rolls}
+    games.append(game)
 
     # since we've gone through the entire game, we haven't reached the end of the file
     return False
@@ -108,30 +114,50 @@ def parse_game(in_file):
 
 def parse_line(line):
     colon_index = line.index(':')
-    move_str_1 = ''
-    move_str_2 = ''
+    move_str_1 = None
+    move_str_2 = None
+    p1_roll = None
+    p2_roll = None
 
     # this handles the case where P2 goes first and P1 doesn't have a move on the first line
     if colon_index == 35:
         # we're adding 2 to the colon index because the moves start 2 spaces after the colon
         move_str_2 = line[colon_index + 2:].strip()
+
+        p2_roll_1 = int(line[colon_index - 2:colon_index - 1])
+        p2_roll_2 = int(line[colon_index - 1:colon_index])
+        p2_roll = (p2_roll_1, p2_roll_2)
+
     else:
         # normal case
         try:
             colon_index_2 = line.index(':', colon_index + 1)
 
             # we're adding 2 to the colon index because the moves start 2 spaces after the colon
-            # we're subtracting 3 from the second colon index because there are 2 unnecessary numbers before the colon
+            # we're subtracting 3 from the second colon index because the roll is stored before the colon
+            # and we don't want to read it in the move string
             move_str_1 = line[colon_index + 2:colon_index_2 - 3].strip()
 
+            p1_roll_1 = int(line[colon_index - 2:colon_index - 1])
+            p1_roll_2 = int(line[colon_index - 1:colon_index])
+            p1_roll = (p1_roll_1, p1_roll_2)
+
             move_str_2 = line[colon_index_2 + 2:].strip()
+
+            p2_roll_1 = int(line[colon_index_2 - 2:colon_index_2 - 1])
+            p2_roll_2 = int(line[colon_index_2 - 1:colon_index_2])
+            p2_roll = (p2_roll_1, p2_roll_2)
 
         # this handles the case where P1 ends the game and P2 doesn't have a move on the last line
         except ValueError:
             # we're adding 2 to the colon index because the moves start 2 spaces after the colon
             move_str_1 = line[colon_index + 2:].strip()
 
-    return move_str_1, move_str_2
+            p1_roll_1 = int(line[colon_index - 2:colon_index - 1])
+            p1_roll_2 = int(line[colon_index - 1:colon_index])
+            p1_roll = (p1_roll_1, p1_roll_2)
+
+    return move_str_1, move_str_2, p1_roll, p2_roll
 
 
 def apply_move(backgammon, player, move_str):

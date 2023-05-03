@@ -8,7 +8,7 @@ import Preprocessor
 from GNUBGClient import GNUBGClient
 
 
-def create_model():
+def create_value_model():
     model = tf.keras.Sequential([
         #tf.keras.layers.InputLayer(input_shape=(28, ), dtype='int32'),
         #tf.keras.layers.Conv2D(32, 1, (3,3), activation='relu'),
@@ -30,19 +30,40 @@ def create_model():
 
     return model
 
+def create_action_model():
+    model = tf.keras.Sequential([
+        #tf.keras.layers.InputLayer(input_shape=(28, ), dtype='int32'),
+        #tf.keras.layers.Conv2D(32, 1, (3,3), activation='relu'),
+        #tf.keras.layers.Conv2D(32, 1, (3, 3), activation='relu'),
+        tf.keras.layers.Flatten(input_shape=(28, 6, 5)),
+        tf.keras.layers.Dense(256, activation='relu'),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dropout(.2),
+        tf.keras.layers.Dense(2, activation='relu'),
+        tf.keras.layers.Softmax()
+    ])
 
-def train_model():
+    model.compile(optimizer='adam',
+                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                  metrics=['accuracy'])
+
+    return model
+
+def train_value_model():
     Preprocessor.create_dataset()
 
     train_x, train_y, test_x, test_y = Preprocessor.create_train_test()
 
-    model = create_model()
-    model.fit(train_x, train_y, epochs=6)
+    value_model = create_value_model()
+    value_model.fit(train_x, train_y, epochs=6)
 
-    test_loss, test_acc = model.evaluate(test_x, test_y, verbose=2)
+    test_loss, test_acc = value_model.evaluate(test_x, test_y, verbose=2)
     print('accuracy = ', test_acc)
 
-    return model
+    return value_model
 
 
 def play_backgammon(policy):
@@ -96,7 +117,7 @@ def play_backgammon(policy):
 
 class NNPolicy(object):
     def __init__(self):
-        self.model = tf.keras.models.load_model('juno_cnn_model')
+        self.model = tf.keras.models.load_model('juno_value_model')
 
     def predict(self, boards, moves):
         bearoff_boards = [Preprocessor.create_bearoff_board(board) for board in boards]
@@ -125,8 +146,8 @@ class RandomPolicy(object):
         return boards[index], moves[index]
 
 def main():
-    model = train_model()
-    #model.save('juno_cnn_model')
+    #model = train_value_model()
+    #model.save('juno_value_model')
 
     #play_backgammon(NNPolicy())
     #play_backgammon(RandomPolicy())
