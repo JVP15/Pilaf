@@ -9,24 +9,6 @@ from gym_backgammon.envs.backgammon import Backgammon, WHITE, BLACK, NUM_POINTS,
 
 games = list()
 
-def create_bearoff_board(board):
-    bearoff_board = np.empty((28,), dtype=np.int32)
-    bearoff_board[1:27] = board
-    bearoff_board[0] = sum(board > 0)
-    bearoff_board[27] = sum(board < 0)
-
-    return bearoff_board
-
-def board_to_planes(board):
-    planes = np.zeros((28, 6, 2), dtype=np.float32) # two planes in total (1 for each player)
-
-    for i in range(len(board)):
-        if board[i] > 0:
-            planes[i, 0:min(6, board[i]), 0] = 1
-        elif board[i] < 0:
-            planes[i, 0:min(6, -1 * board[i]), 1] = 1
-
-    return planes
 
 def read_games():
     for i in range(0, 60):
@@ -103,8 +85,10 @@ def create_dataset():
             # player_ohv = [1, 0] if player == WHITE else [0, 1]
             #
             # obs = player_ohv + list(roll) + white_board + black_board # roll is a tuple, convert to list
-
-            obs = board + list(roll)
+            roll_ohv = [0] * 12
+            roll_ohv[roll[0] - 1] = 1
+            roll_ohv[roll[1] - 1 + 6] = 1
+            obs = board + roll_ohv
 
             obs_seq.append(obs)
 

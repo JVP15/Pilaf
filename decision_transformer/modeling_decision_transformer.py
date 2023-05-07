@@ -940,6 +940,8 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
         state_preds = self.predict_state(x[:, 2])  # predict next state given state and action
         action_preds = self.predict_action(x[:, 1])  # predict next action given state
 
+        # TODO: keep the linear layer to add a hidden layer, then have 8 heads for each pickup and dropoff
+
         if not return_dict:
             return (state_preds, action_preds, return_preds)
 
