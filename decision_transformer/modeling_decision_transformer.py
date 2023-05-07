@@ -825,6 +825,9 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
         )
         self.predict_return = torch.nn.Linear(config.hidden_size, 1)
 
+        self.predict_action = torch.nn.Linear(config.hidden_size, config.action_hidden_size)
+        self.action_heads = nn.ModuleList([nn.Linear(config.action_hidden_size, config.act_vocab_size) for _ in range(config.act_dim)])
+
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -935,21 +938,26 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
         # returns (0), states (1), or actions (2); i.e. x[:,1,t] is the token for s_t
         x = x.reshape(batch_size, seq_length, 3, self.hidden_size).permute(0, 2, 1, 3)
 
-        # get predictions
-        return_preds = self.predict_return(x[:, 2])  # predict next return given state and action
-        state_preds = self.predict_state(x[:, 2])  # predict next state given state and action
-        action_preds = self.predict_action(x[:, 1])  # predict next action given state
+        # create a hidden state for the action preds
+        action_preds = self.predict_action(x[:,2])
+
+        # now pass the preds through each action head to get all 8 actions
+        action_preds = [self.action_heads[i](action_preds) for i in range(self.config.act_dim)]
+
+        # this should give us a list of tensors with each element looking like [batch_size, seq_len, 26], so concat to make it a single tensor with the shape [batch_size, seq_len,, 8, 26]
+        action_preds = torch.stack(action_preds, dim=2)
 
         # TODO: keep the linear layer to add a hidden layer, then have 8 heads for each pickup and dropoff
 
         if not return_dict:
-            return (state_preds, action_preds, return_preds)
+
+            return action_preds
 
         return DecisionTransformerOutput(
             last_hidden_state=encoder_outputs.last_hidden_state,
-            state_preds=state_preds,
             action_preds=action_preds,
-            return_preds=return_preds,
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
         )
+
+    # TODO: create a 'generate action' function

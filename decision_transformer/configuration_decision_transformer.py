@@ -114,9 +114,10 @@ class DecisionTransformerConfig(PretrainedConfig):
         self,
         state_dim=17,
         act_dim=4,
+        act_vocab_size=26,
         hidden_size=128,
         max_ep_len=4096,
-        action_tanh=True,
+        action_hidden_size=128,
         vocab_size=1,
         n_positions=1024,
         n_embd=768,
@@ -145,9 +146,10 @@ class DecisionTransformerConfig(PretrainedConfig):
 
         self.state_dim = state_dim
         self.act_dim = act_dim
+        self.act_vocab_size = act_vocab_size
         self.hidden_size = hidden_size
         self.max_ep_len = max_ep_len
-        self.action_tanh = action_tanh
+        self.action_hidden_size = action_hidden_size
         self.vocab_size = vocab_size
         self.n_positions = n_positions
         self.n_embd = n_embd
