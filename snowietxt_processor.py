@@ -7,32 +7,34 @@ from tqdm import tqdm
 
 from gym_backgammon.envs.backgammon import Backgammon, WHITE, BLACK, NUM_POINTS, BAR
 
-games = list()
 
 
 def read_games():
+    games = []
     for i in range(0, 60):
         #filename = f'games\\match{i}.txt' # used grandmaster
         filename = f'games\\game{i}'  # not sure what I used for this
-        print('Opening', filename)
+        #print('Opening', filename)
 
         with open(filename, 'r') as match_file:
             # skip header
             match_file.readline()
             match_file.readline()
 
-            end_of_file = False
-
-            while not end_of_file:
-                end_of_file = parse_game(match_file)
+            while True:
+                game = parse_game(match_file)
+                if game is None:
+                    break # we've reached the last game in the file
+                games.append(game)
                 # skip the whitespace between games
                 match_file.readline()
+
     print('Number of games', len(games))
 
+    return games
 
 def create_dataset():
-    if len(games) == 0:
-        read_games()
+    games = read_games()
 
     observations = list()
     actions = list()
@@ -67,24 +69,6 @@ def create_dataset():
 
             action_seq.append(action)
 
-            # now we create the board arrays (one for each player) starting with WHITE and then BLACK. The 1st element is off, and the last element is the bar
-            # white_board = [0] * (NUM_POINTS + 2)
-            # black_board = [0] * (NUM_POINTS + 2) # +2 for the bar and off
-            #
-            # white_board[0] = off[WHITE]
-            # white_board[-1] = bar[WHITE]
-            # black_board[0] = off[BLACK]
-            # black_board[-1] = bar[BLACK]
-            #
-            # for i in range(NUM_POINTS):
-            #     if board[i][1] == WHITE: # each element of the board is a tuple (number of pieces, player), where player is None if there are no pieces on that point
-            #         white_board[i + 1] = board[i][0]
-            #     elif board[i][1] == BLACK:
-            #         black_board[i + 1] = board[i][0]
-            #
-            # player_ohv = [1, 0] if player == WHITE else [0, 1]
-            #
-            # obs = player_ohv + list(roll) + white_board + black_board # roll is a tuple, convert to list
             roll_ohv = [0] * 12
             roll_ohv[roll[0] - 1] = 1
             roll_ohv[roll[1] - 1 + 6] = 1
@@ -109,8 +93,8 @@ def create_dataset():
 def parse_game(in_file):
     line = in_file.readline()
 
-    if 'Game' not in line: # this lets us know if we've reached the end of the file
-        return True
+    if 'Game' not in line: # this lets us know if we've reached the end of the file, so return None to indicate that there are no more games
+        return None
 
     game_board = Backgammon()
     boards = list()
@@ -170,10 +154,8 @@ def parse_game(in_file):
             'offs': offs,
             'moves': moves,
             'rolls': rolls}
-    games.append(game)
 
-    # since we've gone through the entire game, we haven't reached the end of the file
-    return False
+    return game
 
 
 def parse_line(line):
