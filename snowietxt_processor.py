@@ -130,21 +130,23 @@ def parse_game(in_file):
         move_str_1, move_str_2, p1_roll, p2_roll = parse_line(line)
 
         if move_str_1 is not None: # if it is None, then it means p1 didn't have a turn (e.g. its the first turn and p2 went first)
-            move = apply_move(game_board, player=WHITE, move_str=move_str_1)
             #boards.append(game_board.board.copy())
-            boards.append(game_board.get_board_features(current_player=WHITE))
+            boards.append(game_board.get_board_features(current_player=WHITE)) # this gets us the state that the board would be in if it were white's turn
             bars.append(game_board.bar.copy())
             offs.append(game_board.off.copy())
+
+            move = apply_move(game_board, player=WHITE, move_str=move_str_1)
             moves.append(move)
             rolls.append(p1_roll)
             players.append(WHITE)
 
         if move_str_2 is not None: # if it is None, then it means p2 didn't have a turn (game probably ended on p1's turn)
-            move = apply_move(game_board, player=BLACK, move_str=move_str_2)
             #boards.append(game_board.board.copy())
-            boards.append(game_board.get_board_features(current_player=BLACK))
+            boards.append(game_board.get_board_features(current_player=BLACK)) # this gets us the state that the board would be in if it were black's turn
             bars.append(game_board.bar.copy())
             offs.append(game_board.off.copy())
+
+            move = apply_move(game_board, player=BLACK, move_str=move_str_2) # then we apply the move after getting the state so it is ready for the next player's turn
             moves.append(move)
             rolls.append(p2_roll)
             players.append(BLACK)
