@@ -19,6 +19,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
+import numpy as np
 import torch
 import torch.utils.checkpoint
 from torch import nn
@@ -726,6 +727,7 @@ class DecisionTransformerOutput(ModelOutput):
 
             Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
             heads.
+        loss (`torch.FloatTensor` of shape `(1,)`, *optional*
     """
 
     state_preds: torch.FloatTensor = None
@@ -734,6 +736,7 @@ class DecisionTransformerOutput(ModelOutput):
     hidden_states: torch.FloatTensor = None
     attentions: torch.FloatTensor = None
     last_hidden_state: torch.FloatTensor = None
+    loss : torch.float32 = None
 
 
 class DecisionTransformerPreTrainedModel(PreTrainedModel):
@@ -820,13 +823,12 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
 
         # note: we don't predict states or returns for the paper
         self.predict_state = torch.nn.Linear(config.hidden_size, config.state_dim)
-        self.predict_action = nn.Sequential(
-            *([nn.Linear(config.hidden_size, config.act_dim)] + ([nn.Tanh()] if config.action_tanh else []))
-        )
         self.predict_return = torch.nn.Linear(config.hidden_size, 1)
 
         self.predict_action = torch.nn.Linear(config.hidden_size, config.action_hidden_size)
         self.action_heads = nn.ModuleList([nn.Linear(config.action_hidden_size, config.act_vocab_size) for _ in range(config.act_dim)])
+
+        self.loss_fn = nn.CrossEntropyLoss()
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -892,6 +894,7 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
 
         batch_size, seq_length = states.shape[0], states.shape[1]
 
+
         if attention_mask is None:
             # attention mask for GPT: 1 if can be attended to, 0 if not
             attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long)
@@ -914,6 +917,7 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
             .permute(0, 2, 1, 3)
             .reshape(batch_size, 3 * seq_length, self.hidden_size)
         )
+
         stacked_inputs = self.embed_ln(stacked_inputs)
 
         # to make the attention mask fit the stacked inputs, have to stack it as well
@@ -944,13 +948,21 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
         # now pass the preds through each action head to get all 8 actions
         action_preds = [self.action_heads[i](action_preds) for i in range(self.config.act_dim)]
 
-        # this should give us a list of tensors with each element looking like [batch_size, seq_len, 26], so concat to make it a single tensor with the shape [batch_size, seq_len,, 8, 26]
+        # this should give us a list of tensors with each element looking like [batch_size, seq_len, 26], so concat to make it a single tensor with the shape [batch_size, seq_len, 8, 26]
         action_preds = torch.stack(action_preds, dim=2)
 
-        # TODO: keep the linear layer to add a hidden layer, then have 8 heads for each pickup and dropoff
+        loss = None
+
+        if self.training: # if we're training the model we can calculate the loss with respect to the given actions
+            # we need to resize the tensor to [batch_size * seq_len, act_dim, act_vocab_size]
+            action_preds = action_preds.reshape(-1, self.config.act_dim, self.config.act_vocab_size)[attention_mask.reshape(-1) > 0]
+            # we have to reshape the preds to [batch_size * seq_len, action_vocab_size, act_dim] b/c CrossEntropyLoss expects (N, C, d1...) where C is the number of classes and d1 is an extra dimension
+            action_preds = action_preds.permute(0, 2, 1)
+            action_targets = actions.reshape(-1, self.config.act_dim)[attention_mask.reshape(-1) > 0].long()
+
+            loss = self.loss_fn(action_preds, action_targets)
 
         if not return_dict:
-
             return action_preds
 
         return DecisionTransformerOutput(
@@ -958,6 +970,48 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
             action_preds=action_preds,
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
+            loss=loss
         )
 
-    # TODO: create a 'generate action' function
+    def generate_action(self, states, actions, valid_actions, rewards, returns_to_go, timesteps, attention_mask):
+        """
+        Valid actions is a list of all the possible next actions for each sequence in the batch.
+        It should look like [[[(src, dst), (src, dst)], [(src, dst)...], ...], ...]
+        The overall shape is [batch_size, number of valid plays for that specific sequence, 0-4 moves per play, 2 (src, dst)]
+        I expect the src and dst to be [0, 26] and the board 1-index, with 0 as White's OFF and 25 as white's BAR (vice versa for Black)
+        """
+
+        # shape is [batch_size, seq_len, 8, 26]
+        action_preds = self(states, actions, rewards, returns_to_go, timesteps, attention_mask).action_preds
+        action_preds = torch.softmax(action_preds, dim=-1) # we want probabilities, not logits so that we can multiply them without worrying about the negative values
+
+        assert len(action_preds) == len(valid_actions), "The batch size for the valid actions and the action preds must be the same"
+
+        # in backgammon, a player *must* use as many of the dice as possible, so the valid plays for a particular sequence are all the same length
+        # so we don't have to normalize the probability based on the length of the valid plays
+        chosen_plays = []
+
+        for i in range(len(action_preds)):
+            possible_plays = valid_actions[i]
+            last_action_probs = action_preds[i, -1] # shape [8, 26]
+
+            play_probs = [] # shape will ultimately be [number of valid plays]
+
+            for play in possible_plays: # each play is a list of move tuples
+                prob = 1
+
+                for i, move in enumerate(play): # iterate over the move tuples
+                    src, dst = move
+                    prob *= last_action_probs[i, src] * last_action_probs[i + 1, dst]
+
+                play_probs.append(prob)
+
+            chosen_plays.append(possible_plays[np.argmax(play_probs)])
+
+        return chosen_plays
+
+
+
+
+
+
