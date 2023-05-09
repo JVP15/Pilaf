@@ -5,7 +5,6 @@ import torch
 import numpy as np
 from tqdm import tqdm
 
-
 @dataclass
 class PreprocessDatasetCollator:
     """
@@ -43,7 +42,8 @@ class PreprocessDatasetCollator:
         traj_lens = np.array(traj_lens)
         self.p_sample = traj_lens / sum(traj_lens)
 
-    def _discount_cumsum(self, x, gamma):
+    @staticmethod
+    def _discount_cumsum(x, gamma):
         discount_cumsum = np.zeros_like(x)
         discount_cumsum[-1] = x[-1]
         for t in reversed(range(x.shape[0] - 1)):
@@ -116,6 +116,7 @@ class PreprocessDatasetCollator:
         }
 
 
+
 class UnwrapCollator:
     """The dataset is already batched, but HuggingFace needs us to provide a batch size >= 1,
     so just provide this and a batch size of 1."""
@@ -131,8 +132,9 @@ class DecisionTransformerPreprocessedDataset(torch.utils.data.Dataset):
         """
         Dataset should follow a format that looks something like: https://huggingface.co/datasets/edbeeching/decision_transformer_gym_replay
         Basically, it should have an 'actions', 'observations, 'rewards', and 'dones' key.
-        batch_size is the size of each preprocessed batch
-        max_len is the maximum length of each sequence
+        batch_size: the size of each preprocessed batch
+        max_len: the maximum length of each sequence
+
         """
         self.batch_size = batch_size
         self.max_len = max_len
@@ -155,12 +157,13 @@ class DecisionTransformerPreprocessedDataset(torch.utils.data.Dataset):
         preprocessor_collator.max_len = self.max_len
 
         # we will preprocess and batch the dataset with a dataloader
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, collate_fn=preprocessor_collator)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, collate_fn=preprocessor_collator, shuffle=True)
 
         # each sequence in a batch is only a random subset of the whole trajectory
         # so we'll loop through the dataloader a couple of times to randomly sample enough to approximate the whole dataset
         dataset_iterations = int(np.ceil(preprocessor_collator.avg_traj_len / self.max_len))
         total_batches = dataset_iterations * len(dataloader)
+
         with tqdm(total=total_batches, desc='Preprocessing dataset', unit='batch') as pbar:
             for _ in range(dataset_iterations):
                 for batch in dataloader:
