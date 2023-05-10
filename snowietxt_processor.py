@@ -1,13 +1,82 @@
-import sys
-import random
-import time
 
-import numpy as np
 from tqdm import tqdm
 
 from gym_backgammon.envs.backgammon import Backgammon, WHITE, BLACK, NUM_POINTS, BAR
 
+# ================= these are util functions that are useful elsewhere (and also here) ================= #
 
+def roll_to_ohv(roll):
+    roll_ohv = [0] * 12
+    roll_ohv[roll[0] - 1] = 1
+    roll_ohv[roll[1] - 1 + 6] = 1
+
+    return roll_ohv
+
+def play_to_action(play, player):
+    """
+    Takes a play (list of moves like (src, dst)) and converts it to an action array [src1, dst1, src2, ..., dst4]
+    The play is 0-indexed,
+    """
+
+    # we need to pad the moves with empty moves (0,0) if there are less than 4 moves
+    action = [0, 0] * 4  # 4 moves
+
+    if play is not None:
+        for i in range(len(play)):
+            # check if the src is bar (dst won't be bar so we don't check for that)
+            if play[i][0] == BAR and player == WHITE:
+                action[2 * i] = 25  # we treat white's bar as 25...
+            elif play[i][0] == BAR and player == BLACK:
+                action[2 * i] = 0  # so we have to treat black's bar as 0
+            else:
+                action[2 * i] = play[i][0] + 1  # +1 because gym_backgammon is 0 indexed, but if we treat black's bar as 0, we need to treat the board as 1-indexed
+
+            action[2 * i + 1] = play[i][1] + 1
+
+    return action
+
+# ================= these are the functions used to create the dataset ================= #
+
+def create_dataset():
+    games = read_games()
+
+    observations = list()
+    actions = list()
+    rewards = list()
+    dones = list()
+
+    for game in tqdm(games):
+        boards = game['boards']
+        bars = game['bars']
+        offs = game['offs']
+        rolls = game['rolls']
+        players = game['players']
+        moves = game['moves']
+
+        obs_seq = list()
+        action_seq = list()
+
+        for (board, bar, off, roll, play, player) in zip(boards, bars, offs, rolls, moves, players):
+
+            action = play_to_action(play, player)
+
+            action_seq.append(action)
+            obs = board + roll_to_ohv(roll)
+
+            obs_seq.append(obs)
+
+        reward = 1 if game['winner'] == WHITE else -1
+        reward_seq = [0] * (len(boards) - 1) + [reward]
+        done_seq = [False] * (len(boards) - 1) + [True]
+
+        assert len(obs_seq) == len(action_seq) == len(reward_seq) == len(done_seq), f'Lengths of sequences are not equal: {len(obs_seq)}, {len(action_seq)}, {len(reward_seq)}, {len(done_seq)}'
+
+        observations.append(obs_seq)
+        actions.append(action_seq)
+        rewards.append(reward_seq)
+        dones.append(done_seq)
+
+    return {'observations': observations, 'actions': actions, 'rewards': rewards, 'dones': dones}
 
 def read_games():
     games = []
@@ -32,63 +101,6 @@ def read_games():
     print('Number of games', len(games))
 
     return games
-
-def create_dataset():
-    games = read_games()
-
-    observations = list()
-    actions = list()
-    rewards = list()
-    dones = list()
-
-    for game in tqdm(games):
-        boards = game['boards']
-        bars = game['bars']
-        offs = game['offs']
-        rolls = game['rolls']
-        players = game['players']
-        moves = game['moves']
-
-        obs_seq = list()
-        action_seq = list()
-
-        for (board, bar, off, roll, move, player) in zip(boards, bars, offs, rolls, moves, players):
-
-            # we need to pad the moves with empty moves (0,0) if there are less than 4 moves
-            action = [0,0] * 4 # 4 moves
-            for i in range(len(move)):
-                # check if the src is bar (dst won't be bar so we don't check for that)
-                if move[i][0] == BAR and player == WHITE:
-                    action[2 * i] = 25 # we treat white's bar as 25...
-                elif move[i][0] == BAR and player == BLACK:
-                    action[2 * i] = 0 # so we have to treat black's bar as 0
-                else:
-                    action[2 * i] = move[i][0] + 1 # +1 because gym_backgammon is 0 indexed, but if we treat black's bar as 0, we need to treat the board as 1-indexed
-
-                action[2 * i + 1] = move[i][1] + 1
-
-            action_seq.append(action)
-
-            roll_ohv = [0] * 12
-            roll_ohv[roll[0] - 1] = 1
-            roll_ohv[roll[1] - 1 + 6] = 1
-            obs = board + roll_ohv
-
-            obs_seq.append(obs)
-
-
-        reward = 1 if game['winner'] == WHITE else -1
-        reward_seq = [0] * (len(boards) - 1) + [reward]
-        done_seq = [False] * (len(boards) - 1) + [True]
-
-        assert len(obs_seq) == len(action_seq) == len(reward_seq) == len(done_seq), f'Lengths of sequences are not equal: {len(obs_seq)}, {len(action_seq)}, {len(reward_seq)}, {len(done_seq)}'
-
-        observations.append(obs_seq)
-        actions.append(action_seq)
-        rewards.append(reward_seq)
-        dones.append(done_seq)
-
-    return {'observations': observations, 'actions': actions, 'rewards': rewards, 'dones': dones}
 
 def parse_game(in_file):
     line = in_file.readline()
@@ -227,7 +239,7 @@ def transform_move(player, move):
 
 
 def apply_move(backgammon, player, move_str):
-    """This function takes a backgammon object, the current player, and a single string containing all of the moves
+    """This function takes a backgammon object, the current player, and a single string containing all the moves
     by that player (it expects that this string has also been stripped of heading and trailing whitespace).
     If the string is empty, it will return an empty move (, ) and not change the board."""
 
@@ -250,7 +262,7 @@ def apply_move(backgammon, player, move_str):
 
 
 if __name__ == '__main__':
-    read_games()
+    games = read_games()
     print(games[0]['boards'][0], games[0]['winner'])
 
     # calculate how many boards we have in the dataset

@@ -1,5 +1,8 @@
 
 import random
+from random import randint
+import time
+
 import numpy as np
 import torch
 
@@ -8,6 +11,7 @@ from gym.spaces import Box
 from gym_backgammon.envs.backgammon_env import BackgammonEnv
 from gym_backgammon.envs.backgammon import WHITE, BLACK, COLORS
 
+from snowietxt_processor import roll_to_ohv, play_to_action
 
 # Agent classes taken from https://github.com/dellalibera/td-gammon/blob/master/td_gammon/agents.py
 # although I've made some substantial changes to them to work with decision transformers
@@ -15,6 +19,9 @@ class Agent:
     def __init__(self, color):
         self.color = color
         self.name = 'Agent({})'.format(COLORS[color])
+
+    def roll(self):
+        return (-randint(1, 6), -randint(1, 6)) if self.color == WHITE else (randint(1, 6), randint(1, 6))
 
     def choose_best_action(self, env, valid_actions, states, actions, rewards, timesteps):
         raise NotImplementedError
@@ -26,10 +33,7 @@ class RandomAgent(Agent):
 
     def choose_best_action(self, env, valid_actions, states=None, actions=None, rewards=None, timesteps=None):
 
-        if valid_actions is not None:
-            return random.choice(actions)
-        else:
-            return None
+        return random.choice(list(valid_actions)) if valid_actions else None
 
 class TDAgent(Agent):
     def __init__(self, color, net):
@@ -79,6 +83,8 @@ class DTAgent(Agent):
 
 class DecisionTransformerBackgammonEnv(BackgammonEnv):
     def __init__(self):
+        super().__init__()
+
         self.observation_space = Box(low=0, high=1, shape=(198 + 6 * 2,)) # 198 for Tesauro's board + 6 * 2 for a one-hot encoding of the both dice rolls
         self.action_space = Box(low=0, high=25, shape=(8,)) # actions are (src, dst) where each are from 0-25, and you can have up to 4 of them because of doubles
 
@@ -95,11 +101,49 @@ class DecisionTransformerBackgammonEnv(BackgammonEnv):
     def evaluate_agents(self, agents, n_episodes):
         wins = {WHITE: 0, BLACK: 0}
 
-        for ep in n_episodes:
+        act_dim = self.action_space.shape[0]
+
+        for ep in range(n_episodes):
             agent_color, roll, observation = self.reset()
-            states = None
-            actions = torch.zeros((0, self.action_space.shape[0]), dtype=torch.float32)
+            states = torch.tensor(observation + roll_to_ohv(roll), dtype=torch.float32).unsqueeze(0)
+            actions = torch.zeros((0, act_dim), dtype=torch.float32)
             rewards = torch.zeros(0, dtype=torch.float32)
+            timesteps = torch.zeros(0, dtype=torch.float32)
 
+            done = False
+            agent = agents[agent_color]
 
+            t = time.time()
 
+            while not done:
+                actions = torch.cat([actions, torch.zeros((1, act_dim), dtype=torch.float32)], dim=0)
+                rewards = torch.cat([rewards, torch.zeros(1)]) # okay, we really don't use reward in the decision transformer, and especially not for backgammon but I'm keeping it around in case it becomes useful one day
+
+                valid_actions = self.get_valid_actions(roll) # note: valid actions is a set
+                action = agent.choose_best_action(self, valid_actions, states, actions, rewards, timesteps)
+                new_obs, reward, done, winner = self.step(action)
+
+                if done:
+                    if winner is not None:
+                        wins[agent_color] += 1
+                    tot = wins[WHITE] + wins[BLACK]
+                    tot = tot if tot > 0 else 1
+                    print(
+                        "EVAL => Game={:<6d} | Winner={} | after {:<4} plays || Wins: {}={:<6}({:<5.1f}%) | {}={:<6}({:<5.1f}%) | Duration={:<.3f} sec".format(
+                            ep + 1, winner, len(actions),
+                            agents[WHITE].name, wins[WHITE], (wins[WHITE] / tot) * 100,
+                            agents[BLACK].name, wins[BLACK], (wins[BLACK] / tot) * 100, time.time() - t))
+
+                actions[-1] = torch.tensor(play_to_action(action, agent_color), dtype=torch.float32)
+                rewards[-1] = reward
+                timesteps = torch.cat([timesteps, torch.full((1,1), fill_value=len(actions), dtype=torch.long)])
+
+                agent_color = self.get_opponent_agent()
+                agent = agents[agent_color]
+                roll = agent.roll()
+
+                states = torch.cat([states, torch.tensor(new_obs + roll_to_ohv(roll), dtype=torch.float32).unsqueeze(0)], dim=0)
+
+if __name__ == '__main__':
+    env = DecisionTransformerBackgammonEnv()
+    env.evaluate_agents({WHITE: RandomAgent(WHITE), BLACK: RandomAgent(BLACK)}, 100)
