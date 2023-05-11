@@ -7,8 +7,9 @@ from gym_backgammon.envs.backgammon import Backgammon, WHITE, BLACK, NUM_POINTS,
 
 def roll_to_ohv(roll):
     roll_ohv = [0] * 12
-    roll_ohv[roll[0] - 1] = 1
-    roll_ohv[roll[1] - 1 + 6] = 1
+    # roll could be negative values (used by gym-backgammon) which is why we do abs
+    roll_ohv[abs(roll[0]) - 1] = 1
+    roll_ohv[abs(roll[1]) - 1 + 6] = 1
 
     return roll_ohv
 
