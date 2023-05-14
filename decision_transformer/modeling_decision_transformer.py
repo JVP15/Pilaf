@@ -976,8 +976,9 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
     def generate_action(self, states, actions, valid_actions, rewards, returns_to_go, timesteps, attention_mask):
         """
         Valid actions is a list of all the possible next actions for each sequence in the batch.
-        It should look like [[[(src, dst), (src, dst)], [(src, dst)...], ...], ...]
-        The overall shape is [batch_size, number of valid plays for that specific sequence, 0-4 moves per play, 2 (src, dst)]
+        It should look like [[[src1, dst1, src2, dst2, ... dst4], [src1, ...], ...], ...]
+        The overall shape is [batch_size, number of valid plays for that specific sequence, 8]
+        Although the play doesn't actually have to be 4 moves long (thus a list of 8). It works with non-padded plays just as well as it does padded plays (so long as the padding is 0,0)
         I expect the src and dst to be [0, 26] and the board 1-index, with 0 as White's OFF and 25 as white's BAR (vice versa for Black)
         """
 
@@ -987,8 +988,6 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
 
         assert len(action_preds) == len(valid_actions), "The batch size for the valid actions and the action preds must be the same"
 
-        # in backgammon, a player *must* use as many of the dice as possible, so the valid plays for a particular sequence are all the same length
-        # so we don't have to normalize the probability based on the length of the valid plays
         chosen_plays = []
 
         for i in range(len(action_preds)):
@@ -998,11 +997,10 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
             play_probs = [] # shape will ultimately be [number of valid plays]
 
             for play in possible_plays: # each play is a list of move tuples
-                prob = 1
+                prob = 0
 
-                for i, move in enumerate(play): # iterate over the move tuples
-                    src, dst = move
-                    prob *= last_action_probs[i, src] * last_action_probs[i + 1, dst]
+                for i, pos in enumerate(play): # pos is either a source or destination point
+                    prob += torch.log(last_action_probs[i, pos]).item() # use log probability to eliminate underflow, not sure if it is an actual issue though
 
                 play_probs.append(prob)
 

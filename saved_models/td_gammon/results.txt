@@ -1,0 +1,3 @@
+advanced: won 492/1000 games (49.20%) against advanced difficulty (in 100 games, won 70 games against intermediate, 54 against intermediate)
+intermediate: won 523/1000 games (52.30%) against intermediate difficulty
+beginner: won 469/1000 games (46.90%) against beginner difficulty (~33% against intermediate)
