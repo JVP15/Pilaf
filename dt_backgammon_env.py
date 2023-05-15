@@ -117,7 +117,6 @@ class DTAgent(Agent):
         self.device = device
 
         self.model.to(device)
-        self.model.eval()
 
         # set up target_return here based on color (1 if color == WHITE, -1 if color == BLACK)
         if color == WHITE:
@@ -143,11 +142,11 @@ class DTAgent(Agent):
             returns_to_go = self.target_return.expand(1, seq_len, -1)
 
             # we'll have to pad the tensors with 0s if the sequence length is less than the max length (we do right-padding like in the paper and dataset function)
-            padding = model.config.max_length - seq_len
+            padding = self.model.config.max_length - seq_len
 
             attention_mask = torch.cat([torch.zeros(padding), torch.ones(seq_len)]).unsqueeze(0).to(device=self.device, dtype=torch.long)
-            states = torch.cat([torch.zeros((padding, model.config.state_dim)), states]).unsqueeze(0).to(self.device)
-            actions = torch.cat([torch.zeros((padding, model.config.act_dim)), actions]).unsqueeze(0).to(self.device)
+            states = torch.cat([torch.zeros((padding, self.model.config.state_dim)), states]).unsqueeze(0).to(self.device)
+            actions = torch.cat([torch.zeros((padding, self.model.config.act_dim)), actions]).unsqueeze(0).to(self.device)
             returns_to_go = torch.cat([torch.zeros((1, padding, 1), device=self.device), returns_to_go], dim=1)
             timesteps = torch.cat([torch.ones(padding, dtype=torch.long), timesteps]).unsqueeze(0).to(self.device)
 
@@ -200,7 +199,7 @@ class DecisionTransformerBackgammonEnv(BackgammonEnv):
     def roll(self):
         return random.randint(1, 6), random.randint(1, 6)
 
-    def evaluate_agents(self, agents, n_episodes):
+    def evaluate_agents(self, agents, n_episodes, verbose=1):
         wins = {WHITE: 0, BLACK: 0}
 
         act_dim = self.action_space.shape[0]
@@ -230,11 +229,13 @@ class DecisionTransformerBackgammonEnv(BackgammonEnv):
                         wins[agent_color] += 1
                     tot = wins[WHITE] + wins[BLACK]
                     tot = tot if tot > 0 else 1
-                    print(
-                        "EVAL => Game={:<6d} | Winner={} | after {:<4} plays || Wins: {}={:<6}({:<5.1f}%) | {}={:<6}({:<5.1f}%) | Duration={:<.3f} sec".format(
-                            ep + 1, winner, len(actions),
-                            agents[WHITE].name, wins[WHITE], (wins[WHITE] / tot) * 100,
-                            agents[BLACK].name, wins[BLACK], (wins[BLACK] / tot) * 100, time.time() - t))
+
+                    if verbose:
+                        print(
+                            "EVAL => Game={:<6d} | Winner={} | after {:<4} plays || Wins: {}={:<6}({:<5.1f}%) | {}={:<6}({:<5.1f}%) | Duration={:<.3f} sec".format(
+                                ep + 1, winner, len(actions),
+                                agents[WHITE].name, wins[WHITE], (wins[WHITE] / tot) * 100,
+                                agents[BLACK].name, wins[BLACK], (wins[BLACK] / tot) * 100, time.time() - t))
 
                 actions[-1] = torch.tensor(play_to_action(action, agent_color), dtype=torch.float32)
                 rewards[-1] = reward
@@ -246,12 +247,16 @@ class DecisionTransformerBackgammonEnv(BackgammonEnv):
 
                 states = torch.cat([states, torch.tensor(new_obs + roll_to_ohv(roll), dtype=torch.float32).unsqueeze(0)], dim=0)
 
+        return wins
+
 if __name__ == '__main__':
     env = DecisionTransformerBackgammonEnv()
     #env.evaluate_agents({WHITE: TDAgent(WHITE, 'advanced'), BLACK: TDAgent(BLACK, 'advanced')}, 10)
 
-    model = DecisionTransformerModel.from_pretrained('output/checkpoint-15500')
+    model = DecisionTransformerModel.from_pretrained('output/checkpoint-57600')
 
     dt_agent = DTAgent(WHITE, model)
 
-    env.evaluate_agents({WHITE: dt_agent, BLACK: TDAgent(BLACK, 'beginner')}, 10)
+    wins = env.evaluate_agents({WHITE: dt_agent, BLACK: TDAgent(BLACK, 'beginner')}, 100)
+
+    print(wins)

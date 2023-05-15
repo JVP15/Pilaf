@@ -81,7 +81,7 @@ def create_dataset():
 
 def read_games():
     games = []
-    for i in range(0, 60):
+    for i in range(0, 10):
         #filename = f'games\\match{i}.txt' # used grandmaster
         filename = f'games\\game{i}'  # not sure what I used for this
         #print('Opening', filename)
