@@ -120,9 +120,9 @@ class DTAgent(Agent):
 
         # set up target_return here based on color (1 if color == WHITE, -1 if color == BLACK)
         if color == WHITE:
-            self.target_return = torch.ones((1, 1), device=device)
+            self.target_return = torch.ones((1, 1), device=device) * 10
         else:
-            self.target_return = torch.ones((1, 1), device=device) * -1
+            self.target_return = torch.ones((1, 1), device=device) * -10
 
     @torch.no_grad()
     def choose_best_action(self, env, valid_plays, states, actions, rewards, timesteps):
@@ -257,6 +257,6 @@ if __name__ == '__main__':
 
     dt_agent = DTAgent(WHITE, model)
 
-    wins = env.evaluate_agents({WHITE: dt_agent, BLACK: TDAgent(BLACK, 'beginner')}, 100)
+    wins = env.evaluate_agents({WHITE: dt_agent, BLACK: RandomAgent(BLACK)}, 100)
 
     print(wins)
