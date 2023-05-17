@@ -31,7 +31,7 @@ class PreprocessDatasetCollator:
         # calculate dataset stats for normalization of states
         #states = []
         traj_lens = []
-        for obs in dataset["observations"]:
+        for obs in tqdm(dataset["observations"]):
             #states.extend(obs)
             traj_lens.append(len(obs))
         self.avg_traj_len = np.mean(traj_lens)
@@ -60,7 +60,7 @@ class PreprocessDatasetCollator:
             p=self.p_sample,  # reweights so we sample according to timesteps
         )
         # a batch of dataset features
-        s, a, r, d, rtg, timesteps, mask = [], [], [], [], [], [], []
+        s, a, r, d, rtg, timesteps, mask, labels = [], [], [], [], [], [], [], []
 
         for ind in batch_inds:
             # for feature in features:
@@ -98,6 +98,12 @@ class PreprocessDatasetCollator:
             timesteps[-1] = np.concatenate([np.zeros((1, self.max_len - tlen)), timesteps[-1]], axis=1)
             mask.append(np.concatenate([np.zeros((1, self.max_len - tlen)), np.ones((1, tlen))], axis=1))
 
+            # labels are just the actions
+            labels.append(a[-1].copy())
+
+            # replace the last action with all zeros (respecting padding)
+            a[-1][:, -1, :] = np.zeros((1, self.act_dim))
+
         s = torch.from_numpy(np.concatenate(s, axis=0)).float().cuda()
         a = torch.from_numpy(np.concatenate(a, axis=0)).float().cuda()  # we don't want to convert actions to floats because we do that later on in the model
         r = torch.from_numpy(np.concatenate(r, axis=0)).float().cuda()
@@ -105,6 +111,7 @@ class PreprocessDatasetCollator:
         rtg = torch.from_numpy(np.concatenate(rtg, axis=0)).float().cuda()
         timesteps = torch.from_numpy(np.concatenate(timesteps, axis=0)).long().cuda()
         mask = torch.from_numpy(np.concatenate(mask, axis=0)).float().cuda()
+        labels = torch.from_numpy(np.concatenate(labels, axis=0)).float().cuda()
 
         return {
             "states": s,
@@ -113,6 +120,7 @@ class PreprocessDatasetCollator:
             "returns_to_go": rtg,
             "timesteps": timesteps,
             "attention_mask": mask,
+            "labels": labels,
         }
 
 
@@ -145,6 +153,7 @@ class DecisionTransformerPreprocessedDataset(torch.utils.data.Dataset):
         self.rtgs = []
         self.timesteps = []
         self.attention_mask = []
+        self.labels = []
 
         self._fill_dataset(dataset)
 
@@ -173,6 +182,7 @@ class DecisionTransformerPreprocessedDataset(torch.utils.data.Dataset):
                     self.rtgs.append(batch["returns_to_go"])
                     self.timesteps.append(batch["timesteps"])
                     self.attention_mask.append(batch["attention_mask"])
+                    self.labels.append(batch["labels"])
                     pbar.update(1)
 
     def __len__(self):
@@ -186,4 +196,5 @@ class DecisionTransformerPreprocessedDataset(torch.utils.data.Dataset):
             "returns_to_go": self.rtgs[idx],
             "timesteps": self.timesteps[idx],
             "attention_mask": self.attention_mask[idx],
+            "labels": self.labels[idx],
         }

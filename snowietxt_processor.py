@@ -1,3 +1,5 @@
+import os
+import random
 
 from tqdm import tqdm
 
@@ -38,8 +40,9 @@ def play_to_action(play, player):
 
 # ================= these are the functions used to create the dataset ================= #
 
-def create_dataset():
-    games = read_games()
+def create_dataset(games=None, num_files=None):
+    if games is None:
+        games = read_games(num_files=num_files)
 
     observations = list()
     actions = list()
@@ -79,27 +82,34 @@ def create_dataset():
 
     return {'observations': observations, 'actions': actions, 'rewards': rewards, 'dones': dones}
 
-def read_games():
+def read_games(num_files=None):
     games = []
-    for i in range(0, 10):
-        #filename = f'games\\match{i}.txt' # used grandmaster
-        filename = f'games\\game{i}'  # not sure what I used for this
-        #print('Opening', filename)
 
-        with open(filename, 'r') as match_file:
-            # skip header
-            match_file.readline()
-            match_file.readline()
+    # loop over all of the files in dataset/games
+    game_files = os.listdir('dataset/games')
 
-            while True:
-                game = parse_game(match_file)
-                if game is None:
-                    break # we've reached the last game in the file
-                games.append(game)
-                # skip the whitespace between games
+    if num_files is not None:
+        random.shuffle(game_files)
+        game_files = game_files[:num_files]
+
+    with tqdm(total=len(game_files), unit='file') as pbar:
+        for filename in game_files:
+            filepath = os.path.join('dataset/games', filename)
+            with open(filepath, 'r') as match_file:
+                # skip header
+                match_file.readline()
                 match_file.readline()
 
-    print('Number of games', len(games))
+                while True:
+                    game = parse_game(match_file)
+                    if game is None:
+                        break
+                    games.append(game)
+                    # skip the whitespace between games
+                    match_file.readline()
+
+            pbar.update(1)
+            pbar.set_postfix(file=filename)
 
     return games
 
@@ -263,7 +273,7 @@ def apply_move(backgammon, player, move_str):
 
 
 if __name__ == '__main__':
-    games = read_games()
+    games = read_games(num_files=1000)
     print(games[0]['boards'][0], games[0]['winner'])
 
     # calculate how many boards we have in the dataset
@@ -275,7 +285,7 @@ if __name__ == '__main__':
     print('Number of boards in dataset: ', num_boards)
     print('Number of games in dataset: ', num_games)
 
-    dataset = create_dataset()
+    dataset = create_dataset(games)
 
     print(dataset['observations'][0][0])
     print(dataset['actions'][0][0])
