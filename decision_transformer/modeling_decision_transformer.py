@@ -846,6 +846,7 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
         output_hidden_states=None,
         output_attentions=None,
         return_dict=None,
+        labels=None,
     ) -> Union[Tuple, DecisionTransformerOutput]:
         r"""
         Returns:
@@ -953,12 +954,12 @@ class DecisionTransformerModel(DecisionTransformerPreTrainedModel):
 
         loss = None
 
-        if self.training: # if we're training the model we can calculate the loss with respect to the given actions
+        if labels is not None: # if we're training the model we can calculate the loss with respect to the given actions
             # we need to resize the tensor to [batch_size * seq_len, act_dim, act_vocab_size]
             action_preds = action_preds.reshape(-1, self.config.act_dim, self.config.act_vocab_size)[attention_mask.reshape(-1) > 0]
             # we have to reshape the preds to [batch_size * seq_len, action_vocab_size, act_dim] b/c CrossEntropyLoss expects (N, C, d1...) where C is the number of classes and d1 is an extra dimension
             action_preds = action_preds.permute(0, 2, 1)
-            action_targets = actions.reshape(-1, self.config.act_dim)[attention_mask.reshape(-1) > 0].long()
+            action_targets = labels.reshape(-1, self.config.act_dim)[attention_mask.reshape(-1) > 0].long()
 
             loss = self.loss_fn(action_preds, action_targets)
 
